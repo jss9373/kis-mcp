@@ -7,10 +7,7 @@ sys.path.insert(0, '/home/cappy_asus/open-trading-api/examples_llm')
 
 import kis_auth as ka
 from mcp.server import Server
-from mcp.server.sse import SseServerTransport
-from starlette.applications import Starlette
-from starlette.routing import Route, Mount
-import uvicorn
+from mcp.server.stdio import stdio_server
 from mcp import types
 
 logging.basicConfig(level=logging.WARNING)
@@ -240,20 +237,9 @@ async def call_tool(name: str, arguments: dict):
     return [types.TextContent(type="text", text=result)]
 
 
-def create_app():
-    from starlette.routing import Mount
-    sse = SseServerTransport("/messages/")
-
-    async def handle_sse(request):
-        async with sse.connect_sse(
-            request.scope, request.receive, request._send
-        ) as streams:
-            await app.run(streams[0], streams[1], app.create_initialization_options())
-
-    return Starlette(routes=[
-        Route("/sse", endpoint=handle_sse),
-        Mount("/messages/", app=sse.handle_post_message),
-    ])
+async def main():
+    async with stdio_server() as (r, w):
+        await app.run(r, w, app.create_initialization_options())
 
 if __name__ == "__main__":
-    uvicorn.run(create_app(), host="0.0.0.0", port=8000)
+    asyncio.run(main())
