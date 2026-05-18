@@ -1,9 +1,16 @@
+﻿"""
+KIS MCP Server — stdio 방식 (이 랩탑 전용)
+Claude Desktop claude_desktop_config.json 에 등록해서 사용
+"""
 import sys
+import os
 import asyncio
 import logging
 from datetime import datetime, timedelta
 
-sys.path.insert(0, '/home/cappy_asus/open-trading-api/examples_llm')
+# 머신 독립적 경로 설정
+BASE_DIR = os.path.join(os.path.expanduser("~"), "open-trading-api", "examples_llm")
+sys.path.insert(0, BASE_DIR)
 
 import kis_auth as ka
 from mcp.server import Server
@@ -15,7 +22,9 @@ logging.basicConfig(level=logging.WARNING)
 ka.auth()
 trenv = ka.getTREnv()
 
-app = Server("kis-mcp")
+app = Server("kis-mcp-local")
+
+# --- util ---
 
 def df_to_text(df, label=""):
     if df is None or df.empty:
@@ -28,12 +37,9 @@ def today():
 def days_ago(n):
     return (datetime.now() - timedelta(days=n)).strftime("%Y%m%d")
 
-@app.list_tools()
-async def list_tools():
-    return [
-        types.Tool(
-            name="kis_api",
-            description="""한국투자증권 해외주식 API. function 파라미터로 기능을 지정하세요.
+# --- Tools ---
+
+TOOL_DESCRIPTION = """한국투자증권 해외주식 API. function 파라미터로 기능을 지정하세요.
 
 [ 시세 조회 ]
 - price: 현재가. 필수: symbol, exchange
@@ -62,29 +68,32 @@ async def list_tools():
 
 거래소 코드: NAS(나스닥), NYS(뉴욕), AMS(아멕스)
 날짜 미입력시 자동으로 오늘/최근 날짜 사용
-""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "function":   {"type": "string", "description": "호출할 기능명"},
-                    "symbol":     {"type": "string", "description": "종목코드 (예: AAPL, NVDA, TSLA, RDW)"},
-                    "exchange":   {"type": "string", "description": "거래소: NAS(나스닥), NYS(뉴욕), AMS(아멕스)"},
-                    "start_date": {"type": "string", "description": "시작일 YYYYMMDD"},
-                    "end_date":   {"type": "string", "description": "종료일 YYYYMMDD"},
-                    "trade_type": {"type": "string", "description": "00:전체, 01:매도, 02:매수"},
-                    "period":     {"type": "string", "description": "차트주기 D/W/M/Y"},
-                    "nmin":       {"type": "string", "description": "분봉갭: 1/5/10/15/30/60"},
-                    "nrec":       {"type": "string", "description": "분봉 요청건수 (최대 120)"},
-                    "minx":       {"type": "string", "description": "N분전: 0=1분,1=2분,2=3분,3=5분,4=10분,5=15분,6=20분,7=30분,8=60분,9=120분"},
-                    "vol_rang":   {"type": "string", "description": "거래량조건: 0=전체,1=1백주↑,2=1천주↑,3=1만주↑"},
-                    "gubn":       {"type": "string", "description": "구분값 (함수마다 다름)"},
-                    "nday":       {"type": "string", "description": "N일자값 (updown_rate용)"},
-                    "nation_cd":  {"type": "string", "description": "국가코드: US/CN/HK 등"},
-                },
-                "required": ["function"]
-            }
-        )
-    ]
+"""
+
+INPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "function":   {"type": "string", "description": "호출할 기능명"},
+        "symbol":     {"type": "string", "description": "종목코드 (예: AAPL, NVDA, TSLA)"},
+        "exchange":   {"type": "string", "description": "거래소: NAS(나스닥), NYS(뉴욕), AMS(아멕스)"},
+        "start_date": {"type": "string", "description": "시작일 YYYYMMDD"},
+        "end_date":   {"type": "string", "description": "종료일 YYYYMMDD"},
+        "trade_type": {"type": "string", "description": "00:전체, 01:매도, 02:매수"},
+        "period":     {"type": "string", "description": "차트주기 D/W/M/Y"},
+        "nmin":       {"type": "string", "description": "분봉갭: 1/5/10/15/30/60"},
+        "nrec":       {"type": "string", "description": "분봉 요청건수 (최대 120)"},
+        "minx":       {"type": "string", "description": "N분전: 0=1분,1=2분,2=3분,3=5분,4=10분,5=15분,6=20분,7=30분,8=60분,9=120분"},
+        "vol_rang":   {"type": "string", "description": "거래량조건: 0=전체,1=1백주↑,2=1천주↑,3=1만주↑"},
+        "gubn":       {"type": "string", "description": "구분값 (함수마다 다름)"},
+        "nday":       {"type": "string", "description": "N일자값 (updown_rate용)"},
+        "nation_cd":  {"type": "string", "description": "국가코드: US/CN/HK 등"},
+    },
+    "required": ["function"]
+}
+
+@app.list_tools()
+async def list_tools():
+    return [types.Tool(name="kis_api", description=TOOL_DESCRIPTION, inputSchema=INPUT_SCHEMA)]
 
 @app.call_tool()
 async def call_tool(name: str, arguments: dict):
@@ -102,58 +111,45 @@ async def call_tool(name: str, arguments: dict):
     gubn       = arguments.get("gubn", "1")
     nday       = arguments.get("nday", "1")
     nation_cd  = arguments.get("nation_cd", "US")
-
     cano = trenv.my_acct
     prod = trenv.my_prod
 
     try:
-        # ── 시세 조회 ──────────────────────────────────────────
         if fn == "price":
             from overseas_stock.price.price import price
-            df = price(auth="", excd=exchange, symb=symbol)
-            result = df_to_text(df, "현재가")
+            result = df_to_text(price(auth="", excd=exchange, symb=symbol), "현재가")
 
         elif fn == "price_detail":
             from overseas_stock.price_detail.price_detail import price_detail
-            df = price_detail(auth="", excd=exchange, symb=symbol)
-            result = df_to_text(df, "현재가 상세")
+            result = df_to_text(price_detail(auth="", excd=exchange, symb=symbol), "현재가 상세")
 
         elif fn == "dailyprice":
             from overseas_stock.dailyprice.dailyprice import dailyprice
-            df1, df2 = dailyprice(
-                auth="", excd=exchange, symb=symbol,
-                gubn="0", bymd="", modp="1"
-            )
+            _, df2 = dailyprice(auth="", excd=exchange, symb=symbol, gubn="0", bymd="", modp="1")
             result = df_to_text(df2, f"{symbol} 일봉 OHLCV")
 
-        # ── 차트 분석 ──────────────────────────────────────────
         elif fn == "chart_daily":
             from overseas_stock.inquire_daily_chartprice.inquire_daily_chartprice import inquire_daily_chartprice
-            df1, df2 = inquire_daily_chartprice(
-                fid_cond_mrkt_div_code="N",
-                fid_input_iscd=symbol,
-                fid_input_date_1=start_date,
-                fid_input_date_2=end_date,
+            _, df2 = inquire_daily_chartprice(
+                fid_cond_mrkt_div_code="N", fid_input_iscd=symbol,
+                fid_input_date_1=start_date, fid_input_date_2=end_date,
                 fid_period_div_code=period,
             )
             result = df_to_text(df2, f"{symbol} {period}봉 차트")
 
         elif fn == "chart_minute":
             from overseas_stock.inquire_time_itemchartprice.inquire_time_itemchartprice import inquire_time_itemchartprice
-            df1, df2 = inquire_time_itemchartprice(
+            _, df2 = inquire_time_itemchartprice(
                 auth="", excd=exchange, symb=symbol,
-                nmin=nmin, pinc="1", next="0",
-                nrec=nrec, fill="", keyb=""
+                nmin=nmin, pinc="1", next="0", nrec=nrec, fill="", keyb=""
             )
             result = df_to_text(df2, f"{symbol} {nmin}분봉")
 
-        # ── 계좌/잔고 ──────────────────────────────────────────
         elif fn == "balance":
             from overseas_stock.inquire_balance.inquire_balance import inquire_balance
             df1, df2 = inquire_balance(
                 cano=cano, acnt_prdt_cd=prod,
-                ovrs_excg_cd="", tr_crcy_cd="USD",
-                FK200="", NK200=""
+                ovrs_excg_cd="", tr_crcy_cd="USD", FK200="", NK200=""
             )
             result = df_to_text(df1, "보유종목") + "\n\n" + df_to_text(df2, "잔고요약")
 
@@ -174,8 +170,7 @@ async def call_tool(name: str, arguments: dict):
                 cano=cano, acnt_prdt_cd=prod,
                 erlm_strt_dt=start_date, erlm_end_dt=end_date,
                 ovrs_excg_cd=exchange, pdno=symbol,
-                sll_buy_dvsn_cd=trade_type, loan_dvsn_cd="",
-                FK100="", NK100=""
+                sll_buy_dvsn_cd=trade_type, loan_dvsn_cd="", FK100="", NK100=""
             )
             result = df_to_text(df1, "거래내역") + "\n\n" + df_to_text(df2, "합계")
 
@@ -183,50 +178,42 @@ async def call_tool(name: str, arguments: dict):
             from overseas_stock.inquire_period_profit.inquire_period_profit import inquire_period_profit
             df1, df2 = inquire_period_profit(
                 cano=cano, acnt_prdt_cd=prod,
-                ovrs_excg_cd=exchange, natn_cd="",
-                crcy_cd="", pdno=symbol,
-                inqr_strt_dt=start_date, inqr_end_dt=end_date,
-                wcrc_frcr_dvsn_cd="02",
+                ovrs_excg_cd=exchange, natn_cd="", crcy_cd="", pdno=symbol,
+                inqr_strt_dt=start_date, inqr_end_dt=end_date, wcrc_frcr_dvsn_cd="02",
             )
             result = df_to_text(df1, "손익내역") + "\n\n" + df_to_text(df2, "손익합계")
 
-        # ── 시장 분석 ──────────────────────────────────────────
         elif fn == "volume_surge":
             from overseas_stock.volume_surge.volume_surge import volume_surge
-            df1, df2 = volume_surge(excd=exchange, minx=minx, vol_rang=vol_rang)
+            df1, _ = volume_surge(excd=exchange, minx=minx, vol_rang=vol_rang)
             result = df_to_text(df1, "거래량급증")
 
         elif fn == "price_fluct":
             from overseas_stock.price_fluct.price_fluct import price_fluct
-            df1, df2 = price_fluct(excd=exchange, gubn=gubn, minx=minx, vol_rang=vol_rang)
+            df1, _ = price_fluct(excd=exchange, gubn=gubn, minx=minx, vol_rang=vol_rang)
             result = df_to_text(df1, "급등급락")
 
         elif fn == "updown_rate":
             from overseas_stock.updown_rate.updown_rate import updown_rate
-            df1, df2 = updown_rate(excd=exchange, nday=nday, gubn=gubn, vol_rang=vol_rang)
+            df1, _ = updown_rate(excd=exchange, nday=nday, gubn=gubn, vol_rang=vol_rang)
             result = df_to_text(df1, "상승하락률순위")
 
         elif fn == "market_cap":
             from overseas_stock.market_cap.market_cap import market_cap
-            df1, df2 = market_cap(excd=exchange, vol_rang=vol_rang)
+            df1, _ = market_cap(excd=exchange, vol_rang=vol_rang)
             result = df_to_text(df1, "시가총액순위")
 
-        # ── 종목 정보 ──────────────────────────────────────────
         elif fn == "search_info":
             exchange_code_map = {"NAS": "512", "NYS": "513", "AMS": "529"}
-            prdt_type = exchange_code_map.get(exchange, "512")
             from overseas_stock.search_info.search_info import search_info
-            df = search_info(prdt_type_cd=prdt_type, pdno=symbol)
-            result = df_to_text(df, f"{symbol} 종목정보")
+            result = df_to_text(search_info(prdt_type_cd=exchange_code_map.get(exchange, "512"), pdno=symbol), f"{symbol} 종목정보")
 
         elif fn == "news":
             from overseas_stock.news_title.news_title import news_title
-            df = news_title(
-                nation_cd=nation_cd, exchange_cd=exchange,
-                symb=symbol, info_gb="", class_cd="",
-                data_dt="", data_tm="", cts=""
-            )
-            result = df_to_text(df, "뉴스")
+            result = df_to_text(news_title(
+                nation_cd=nation_cd, exchange_cd=exchange, symb=symbol,
+                info_gb="", class_cd="", data_dt="", data_tm="", cts=""
+            ), "뉴스")
 
         else:
             result = f"알 수 없는 function: '{fn}'\n사용 가능 목록은 tool description 참고하세요."
@@ -236,6 +223,8 @@ async def call_tool(name: str, arguments: dict):
 
     return [types.TextContent(type="text", text=result)]
 
+
+# --- 진입점 ---
 
 async def main():
     async with stdio_server() as (r, w):
