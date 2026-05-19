@@ -1,13 +1,14 @@
 # kis-mcp
 
-한국투자증권 Open API를 Claude Desktop에 연결하는 MCP 서버
+한국투자증권 Open API를 Claude Desktop에 연결하는 **비상용 로컬 MCP 서버**
+
+클램쉘 메인 서버가 다운됐을 때 이 랩탑(ASUS Zenbook)에서 임시로 활성화해서 사용한다.
 
 ## 파일 구성
 
 | 파일 | 설명 |
 |------|------|
-| `kis_mcp_server.py` | stdio 방식 — 로컬 비상용 (claude_desktop_config.json 등록) |
-| `kis_mcp_server_sse.py` | SSE 방식 — 클램쉘 메인 서버용 (Cloudflare Tunnel + HTTPS 예정) |
+| `kis_mcp_server.py` | stdio 방식 MCP 서버 |
 | `kis-enable.sh` | Claude Desktop에 KIS MCP 활성화 |
 | `kis-disable.sh` | Claude Desktop에서 KIS MCP 비활성화 |
 
@@ -17,7 +18,7 @@
 - [koreainvestment/open-trading-api](https://github.com/koreainvestment/open-trading-api) 클론 및 `uv sync` 완료
 - `~/KIS/config/kis_devlp.yaml` — KIS API 키 설정
 
-## 사용법 (로컬 비상용)
+## 사용법
 
 **활성화**
 ```bash
@@ -50,7 +51,6 @@
 ```
 ~/open-trading-api/          ← 모든 파일 통합 폴더
 ├── kis_mcp_server.py
-├── kis_mcp_server_sse.py
 ├── kis-enable.sh
 ├── kis-disable.sh
 ├── examples_llm/            ← KIS API 모듈
